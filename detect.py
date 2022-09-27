@@ -12,6 +12,17 @@ from models.retinaface import RetinaFace
 from utils.box_utils import decode, decode_landm
 import time
 
+#device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+torch_device = "mtgpu"
+# torch_device = "cuda"
+# torch_device = "cpu"
+if torch_device == "mtgpu":
+    import musa_torch_extension
+    a = torch.tensor([1])
+    a.to("mtgpu")
+    print("-------")
+device = torch.device(torch_device)
+
 parser = argparse.ArgumentParser(description='Retinaface')
 
 parser.add_argument('-m', '--trained_model', default='./weights/mobilenet0.25_Final.pth',
@@ -22,7 +33,7 @@ parser.add_argument('--confidence_threshold', default=0.02, type=float, help='co
 parser.add_argument('--top_k', default=5000, type=int, help='top_k')
 parser.add_argument('--nms_threshold', default=0.4, type=float, help='nms_threshold')
 parser.add_argument('--keep_top_k', default=750, type=int, help='keep_top_k')
-parser.add_argument('-s', '--save_image', action="store_true", default=False, help='show detection results')
+parser.add_argument('-s', '--save_image', action="store_true", default=True, help='show detection results')
 parser.add_argument('--vis_thres', default=0.6, type=float, help='visualization_threshold')
 args = parser.parse_args()
 
@@ -89,15 +100,16 @@ if __name__ == '__main__':
     net.eval()
     print('Finished loading model!')
     print(net)
-    cudnn.benchmark = True
+    # cudnn.benchmark = True
     device = torch.device("cpu" if args.cpu else "cuda")
-    net = net.to(device)
+    net = net.to(torch_device)
+    torch_device_cpu = torch.device("cpu")
 
     resize = 1
 
     # testing begin, warm up
     for i in range(10):
-        image_path = "./curve/test.jpg"
+        image_path = "./curve/liwei.jpg"
         img_raw = cv2.imread(image_path, cv2.IMREAD_COLOR)
 
         img = np.float32(img_raw)
@@ -107,28 +119,38 @@ if __name__ == '__main__':
         img -= (104, 117, 123)
         img = img.transpose(2, 0, 1)
         img = torch.from_numpy(img).unsqueeze(0)
-        img = img.to(device)
-        scale = scale.to(device)
+        img = img.to(torch_device)
+        scale = scale.to(torch_device_cpu)
 
         tic = time.time()
         loc, conf, landms = net(img)  # forward pass
         print('net forward time: {:.4f}'.format(time.time() - tic))
+        loc = loc.to(torch_device_cpu)
+        conf = conf.to(torch_device_cpu)
+        landms = landms.to(torch_device_cpu)
+        print("-------")
 
         priorbox = PriorBox(cfg, image_size=(im_height, im_width))
         priors = priorbox.forward()
-        priors = priors.to(device)
+        priors = priors.to(torch_device_cpu)
         prior_data = priors.data
         boxes = decode(loc.data.squeeze(0), prior_data, cfg['variance'])
+        print("-------")
         boxes = boxes * scale / resize
+        print("-------")
         boxes = boxes.cpu().numpy()
+        print("-------")
         scores = conf.squeeze(0).data.cpu().numpy()[:, 1]
+        print("-------")
         landms = decode_landm(landms.data.squeeze(0), prior_data, cfg['variance'])
+        print("-------")
         scale1 = torch.Tensor([img.shape[3], img.shape[2], img.shape[3], img.shape[2],
                                img.shape[3], img.shape[2], img.shape[3], img.shape[2],
                                img.shape[3], img.shape[2]])
-        scale1 = scale1.to(device)
+        scale1 = scale1.to(torch_device_cpu)
         landms = landms * scale1 / resize
         landms = landms.cpu().numpy()
+        print("-------")
 
         # ignore low scores
         inds = np.where(scores > args.confidence_threshold)[0]
@@ -179,7 +201,7 @@ if __name__ == '__main__':
             name = "test.jpg"
             cv2.imwrite(name, img_raw)
 
-    image_path = "./curve/test.jpg"
+    image_path = "./curve/liwei.jpg"
     img_raw = cv2.imread(image_path, cv2.IMREAD_COLOR)
 
     img = np.float32(img_raw)
@@ -189,8 +211,8 @@ if __name__ == '__main__':
     img -= (104, 117, 123)
     img = img.transpose(2, 0, 1)
     img = torch.from_numpy(img).unsqueeze(0)
-    img = img.to(device)
-    scale = scale.to(device)
+    img = img.to(torch_device)
+    scale = scale.to(torch_device)
 
     timecost = []
     for i in range(200):
@@ -200,4 +222,4 @@ if __name__ == '__main__':
         timecost.append([(t2 - t1) * 1000.0])
         # print("blazeface timecost:", (t2 - t1) * 1000.0, 'ms')
 
-    save_benchmark(timecost, ["BlazeFace"], "cpu")
+    save_benchmark(timecost, ["BlazeFace"], "mtgpu")
