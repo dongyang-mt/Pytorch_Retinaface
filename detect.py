@@ -14,15 +14,15 @@ import time
 
 parser = argparse.ArgumentParser(description='Retinaface')
 
-parser.add_argument('-m', '--trained_model', default='./weights/Resnet50_Final.pth',
+parser.add_argument('-m', '--trained_model', default='./weights/mobilenet0.25_Final.pth',
                     type=str, help='Trained state_dict file path to open')
-parser.add_argument('--network', default='resnet50', help='Backbone network mobile0.25 or resnet50')
-parser.add_argument('--cpu', action="store_true", default=False, help='Use cpu inference')
+parser.add_argument('--network', default='mobile0.25', help='Backbone network mobile0.25 or resnet50')
+parser.add_argument('--cpu', action="store_true", default=True, help='Use cpu inference')
 parser.add_argument('--confidence_threshold', default=0.02, type=float, help='confidence_threshold')
 parser.add_argument('--top_k', default=5000, type=int, help='top_k')
 parser.add_argument('--nms_threshold', default=0.4, type=float, help='nms_threshold')
 parser.add_argument('--keep_top_k', default=750, type=int, help='keep_top_k')
-parser.add_argument('-s', '--save_image', action="store_true", default=True, help='show detection results')
+parser.add_argument('-s', '--save_image', action="store_true", default=False, help='show detection results')
 parser.add_argument('--vis_thres', default=0.6, type=float, help='visualization_threshold')
 args = parser.parse_args()
 
@@ -62,6 +62,19 @@ def load_model(model, pretrained_path, load_to_cpu):
     model.load_state_dict(pretrained_dict, strict=False)
     return model
 
+def save_benchmark(timecost, modulename, torch_device="cpu", folder="benchmark"):
+    cost_np = np.array(timecost)
+    print("==>> cost_np.shape: ", cost_np.shape)
+    print("==>> type(cost_np): ", type(cost_np))
+    import csv
+    os.makedirs(folder, exist_ok=True)
+    csvFile = open(os.path.join(folder, torch_device + "_analyze.csv"), 'w', newline='')
+    writer = csv.writer(csvFile)
+    writer.writerow([torch_device, "mean", "std", "min", "max", "count"])
+    for i, name in enumerate(modulename):
+        writer.writerow([name, cost_np[:,i].mean(), cost_np[:,i].std(), cost_np[:,i].min(), cost_np[:,i].max(), cost_np[:,i].shape[0]])
+    np.savetxt(os.path.join(folder, torch_device + "_timecost.csv"), cost_np, delimiter=",")
+
 
 if __name__ == '__main__':
     torch.set_grad_enabled(False)
@@ -82,8 +95,8 @@ if __name__ == '__main__':
 
     resize = 1
 
-    # testing begin
-    for i in range(100):
+    # testing begin, warm up
+    for i in range(10):
         image_path = "./curve/test.jpg"
         img_raw = cv2.imread(image_path, cv2.IMREAD_COLOR)
 
@@ -166,3 +179,25 @@ if __name__ == '__main__':
             name = "test.jpg"
             cv2.imwrite(name, img_raw)
 
+    image_path = "./curve/test.jpg"
+    img_raw = cv2.imread(image_path, cv2.IMREAD_COLOR)
+
+    img = np.float32(img_raw)
+
+    im_height, im_width, _ = img.shape
+    scale = torch.Tensor([img.shape[1], img.shape[0], img.shape[1], img.shape[0]])
+    img -= (104, 117, 123)
+    img = img.transpose(2, 0, 1)
+    img = torch.from_numpy(img).unsqueeze(0)
+    img = img.to(device)
+    scale = scale.to(device)
+
+    timecost = []
+    for i in range(200):
+        t1 = time.time()
+        loc, conf, landms = net(img)  # forward pass
+        t2 = time.time()
+        timecost.append([(t2 - t1) * 1000.0])
+        # print("blazeface timecost:", (t2 - t1) * 1000.0, 'ms')
+
+    save_benchmark(timecost, ["BlazeFace"], "cpu")
