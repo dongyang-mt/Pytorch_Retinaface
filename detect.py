@@ -15,6 +15,7 @@ import time
 #device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 torch_device = "mtgpu"
 #torch_device = "cuda"
+#torch_device = "cuda:7"
 # torch_device = "cpu"
 if torch_device == "mtgpu":
     import musa_torch_extension
@@ -222,4 +223,4 @@ if __name__ == '__main__':
         timecost.append([(t2 - t1) * 1000.0])
         # print("blazeface timecost:", (t2 - t1) * 1000.0, 'ms')
 
-    save_benchmark(timecost, ["BlazeFace"], "mtgpu")
+    save_benchmark(timecost, ["BlazeFace"], torch_device)
