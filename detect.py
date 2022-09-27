@@ -14,7 +14,7 @@ import time
 
 #device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 torch_device = "mtgpu"
-# torch_device = "cuda"
+#torch_device = "cuda"
 # torch_device = "cpu"
 if torch_device == "mtgpu":
     import musa_torch_extension
